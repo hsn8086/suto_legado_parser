@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "suto_legado_parser"
+version = "0.1.0"
+description = ""
+authors = ["hsn <hsn1919810@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+httpx = "^0.27.2"
+beautifulsoup4 = "^4.12.3"
+jsonpath-ng = "^1.6.1"
+pydantic = "^2.8.2"
+stpyv8 = "^12.8.374.26"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
