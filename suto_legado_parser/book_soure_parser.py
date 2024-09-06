@@ -84,12 +84,15 @@ def url_process(url: str) -> ProcessedUrl:
     return ProcessedUrl(url=url, decode=decode, method=method, body=body, headers=headers)
 
 
-def word_count_process(word_count: str) -> int:
+def word_count_process(word_count: str|int) -> int:
+    if isinstance(word_count, int):
+        return word_count
     rep_dict = {"亿": "00000000", "万": "0000", "千": "000", "百": "00", "十": "0", "零": "0", "一": "1", "二": "2",
                 "三": "3", "四": "4", "五": "5", "六": "6", "七": "7", "八": "8", "九": "9", "壹": "1", "贰": "2",
                 "叁": "3", "肆": "4", "伍": "5", "陆": "6", "柒": "7", "捌": "8", "玖": "9",
                 "k": "000", "m": "000000", "g": "000000000", "w": "0000", "K": "000", "M": "000000", "G": "000000000",
                 "W": "0000"}
+
     for key, value in rep_dict.items():
         word_count = word_count.replace(key, value)
     return int(''.join(filter(lambda x: x.isalnum(), word_count)))
