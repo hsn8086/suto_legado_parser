@@ -23,15 +23,18 @@
 
 @Date       : 2024/9/4 下午6:21
 """
+from typing import Callable
 
 from .parser import split_rule
 from .rules import JSoupRule, JsonPath, StrRule
 from ..utils.text import classify_string
 
 
-def rule_compile(rules_str: str, var: dict, *, allow_str_rule=True, default=None) -> str:
+def rule_compile(rules_str: str, var: dict, *, allow_str_rule=True, default=None,
+                 callback: Callable | None = None) -> str:
     """
     To process the rule.
+    :param callback:
     :param rules_str: The rule string.
     :param var: The variable of the rule.
     :param allow_str_rule: If allow_str_rule is True, then compile the rule as a string.
@@ -57,5 +60,6 @@ def rule_compile(rules_str: str, var: dict, *, allow_str_rule=True, default=None
                     var["result"] = JSoupRule(rule.compile(var)).compile(var)
         else:
             var["result"] = rule.compile(var)  # Compile the rule in the normal way.
-
+    if callback is not None:
+        return callback(var["result"])
     return var["result"]  # Return the result.
