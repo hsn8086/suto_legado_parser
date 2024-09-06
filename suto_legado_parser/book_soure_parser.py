@@ -46,11 +46,16 @@ class BookInfo(BaseModel):
     last_chapter: str = "Unknown"
 
 
+class BookDetail(BookInfo):
+    toc_url: str = "https://example.com"
+
+
 class ProcessedUrl(BaseModel):
     url: str
     decode: str = 'utf-8'
     method: str = 'get'
     body: str = ''
+    headers: dict = {}
 
 
 def url_process(url: str) -> ProcessedUrl:
@@ -64,7 +69,7 @@ def url_process(url: str) -> ProcessedUrl:
         url = url[:cut]  # Cut the options
 
         # The function of next sentence is similar as json.loads(options_json)
-        options = eval(options_json)  # Parse the options
+        options = eval(options_json.replace("true", "True").replace("false", "False"))  # Parse the options
         # Explanation:
         # The json of the options should be like this:
         #   {"encode": "utf-8", "method": "post", "body": "key={{key}}"}
@@ -75,7 +80,19 @@ def url_process(url: str) -> ProcessedUrl:
     decode = options.get("decode", 'utf-8')
     method = options.get("method", 'get')
     body = options.get("body", '')
-    return ProcessedUrl(url=url, decode=decode, method=method, body=body)
+    headers = options.get("headers", {})
+    return ProcessedUrl(url=url, decode=decode, method=method, body=body, headers=headers)
+
+
+def word_count_process(word_count: str) -> int:
+    rep_dict = {"亿": "00000000", "万": "0000", "千": "000", "百": "00", "十": "0", "零": "0", "一": "1", "二": "2",
+                "三": "3", "四": "4", "五": "5", "六": "6", "七": "7", "八": "8", "九": "9", "壹": "1", "贰": "2",
+                "叁": "3", "肆": "4", "伍": "5", "陆": "6", "柒": "7", "捌": "8", "玖": "9",
+                "k": "000", "m": "000000", "g": "000000000", "w": "0000", "K": "000", "M": "000000", "G": "000000000",
+                "W": "0000"}
+    for key, value in rep_dict.items():
+        word_count = word_count.replace(key, value)
+    return int(''.join(filter(lambda x: x.isalnum(), word_count)))
 
 
 class Parser:
@@ -114,26 +131,30 @@ class Parser:
         self.logger.debug(f"Books: {books}")
 
         for book in books:
-            author = rule_compile(self.rule_search.get("author"), {"result": book}, allow_str_rule=False)
-            name = rule_compile(self.rule_search.get("name"), {"result": book}, allow_str_rule=False)
-            word_count = rule_compile(self.rule_search.get("wordCount"), {"result": book}, allow_str_rule=False,
-                                      default="0")
-            book_url = rule_compile(self.rule_search.get("bookUrl"), {"result": book})
-            cover_url = rule_compile(self.rule_search.get("coverUrl"), {"result": book}, allow_str_rule=False)
-            intro = rule_compile(self.rule_search.get("intro"), {"result": book}, allow_str_rule=False)
-            kind = rule_compile(self.rule_search.get("kind"), {"result": book})
-            last_chapter = rule_compile(self.rule_search.get("lastChapter"), {"result": book})
-
-            self.logger.debug(
-                f"Book: {name} {author} {word_count} {book_url} {cover_url} {intro} {kind} {last_chapter}")
-            yield BookInfo(name=name,
-                           author=author,
-                           word_count=int(''.join(filter(lambda x: x.isalnum(), word_count))),  # Extract the number
-                           book_url=book_url,
-                           cover_url=cover_url,
-                           intro=intro,
-                           kind=kind,
-                           last_chapter=last_chapter)
+            try:
+                author = rule_compile(self.rule_search.get("author"), {"result": book}, allow_str_rule=False)
+                name = rule_compile(self.rule_search.get("name"), {"result": book}, allow_str_rule=False)
+                word_count = rule_compile(self.rule_search.get("wordCount"), {"result": book}, allow_str_rule=False,
+                                          default="0", callback=word_count_process)
+                book_url = rule_compile(self.rule_search.get("bookUrl"), {"result": book})
+                cover_url = rule_compile(self.rule_search.get("coverUrl"), {"result": book}, allow_str_rule=False)
+                intro = rule_compile(self.rule_search.get("intro"), {"result": book}, allow_str_rule=False,
+                                     default="No description")
+                kind = rule_compile(self.rule_search.get("kind"), {"result": book})
+                last_chapter = rule_compile(self.rule_search.get("lastChapter"), {"result": book})
+                self.logger.debug(
+                    f"Book: {name} {author} {word_count} {book_url} {cover_url} {intro} {kind} {last_chapter}")
+                yield BookInfo(name=name,
+                               author=author,
+                               word_count=word_count,
+                               book_url=book_url,
+                               cover_url=cover_url,
+                               intro=intro,
+                               kind=kind,
+                               last_chapter=last_chapter)
+            except Exception as e:
+                self.logger.exception(e)
+                continue
 
     async def get_detail(self, book_url: str):
         self.logger.info(f"Getting detail of {book_url}")
@@ -155,9 +176,17 @@ class Parser:
         kind = rule_compile(self.rule_book_info.get("kind"), {"result": init})
         last_chapter = rule_compile(self.rule_book_info.get("lastChapter"), {"result": init})
         toc_url = rule_compile(self.rule_book_info.get("tocUrl"), {"result": init})
-        word_count = rule_compile(self.rule_book_info.get("wordCount"), {"result": init})
-
-        self.logger.debug(author, cover_url, intro, kind, last_chapter, name, toc_url, word_count)
+        word_count = rule_compile(self.rule_book_info.get("wordCount"), {"result": init}, default="0",
+                                  callback=word_count_process)
+        return BookDetail(name=name,
+                          author=author,
+                          word_count=word_count,
+                          book_url=book_url,
+                          cover_url=cover_url,
+                          intro=intro,
+                          kind=kind,
+                          last_chapter=last_chapter,
+                          toc_url=toc_url)
 
     async def get_book(self, book_url: str):
         self.logger.debug((await self.client.get(book_url)).content)
