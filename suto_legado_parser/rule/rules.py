@@ -28,7 +28,6 @@ import json
 import logging
 import re
 from abc import ABCMeta, abstractmethod
-from dataclasses import dataclass
 from typing import Iterable, Any
 
 import STPyV8
@@ -130,42 +129,58 @@ class JSoupRule(Rule):
         soup = BeautifulSoup(var["result"], "html.parser")
         rt: BeautifulSoup = soup
         for i in spilt_rule:
-            try:
-                _type, selector = i.split(".", 1)
-            except ValueError:
-                _type = i
-                selector = ""
-            selector: str
-
-            # If the selector is a tag with no.
-            temp_sel = selector.rsplit(".", 1)
             no = None
-            if len(temp_sel) >= 2 and temp_sel[-1].isdigit():
-                selector = ''.join(temp_sel[:-1])
-                no = int(temp_sel[-1])  # Get the no of the tag.
-
-            if _type == "class":
-                rt: element.ResultSet = rt.find_all(class_=selector)
-            elif _type == "id":
-                rt: element.ResultSet = rt.find_all(id=selector)
-            elif _type == "tag":
-                rt: element.ResultSet = rt.select(selector.replace(".", ">"))
-            elif _type == "text":
-                rt: str = rt.get_text()
-            elif _type == "children":
-                rt: Iterable = rt.children  # todo: Uncompleted
-                raise NotImplementedError("The children selector is not implemented.")
+            if i.startswith("[") and i.endswith("]"):
+                _type = "css"
+                selector = i
             else:
-                rt = rt.get(_type)
+                try:
+                    _type, selector = i.split(".", 1)
+                except ValueError:
+                    _type = i
+                    selector = ""
+                selector: str
+
+                # If the selector is a tag with no.
+                temp_sel = selector.rsplit(".", 1)
+
+                if len(temp_sel) >= 2 and temp_sel[-1].isdigit():
+                    selector = ''.join(temp_sel[:-1])
+                    no = int(temp_sel[-1])  # Get the no of the tag.
+            match _type:
+                case "class":
+                    rt: element.ResultSet = rt.find_all(class_=selector)
+                case "id":
+                    rt: element.ResultSet = rt.find_all(id=selector)
+                case "tag":
+                    if isinstance(rt, list):
+                        rt_list = []
+                        for j in rt:
+                            rt_list.extend(j.select(selector.replace(".", ">")))
+                        rt: list = rt_list
+                    else:
+                        rt: element.ResultSet = rt.select(selector.replace(".", ">"))
+                case "text":
+                    rt: str = rt.get_text()
+                case "children":
+                    rt: Iterable = rt.children  # todo: Uncompleted
+                    raise NotImplementedError("The children selector is not implemented.")
+                case "css":
+                    rt: element.ResultSet = rt.select(selector.strip())
+                case _:
+                    rt = rt.get(_type)
+
             if rt is None:
                 raise
-
+            if isinstance(rt, list):
+                if len(rt) == 1 and no is None:  # If there is only one tag in the ResultSet, return the tag.
+                    rt = rt[0]
             if no is not None:
                 rt: element.Tag = rt[no]
 
-        rt: element.Tag | element.ResultSet | str | Iterable
+        rt: element.Tag | list | str | Iterable
 
-        if isinstance(rt, element.ResultSet):
+        if isinstance(rt, list):
             if len(rt) == 1:  # If there is only one tag in the ResultSet, return the tag.
                 rt = rt[0]
             if len(rt) >= 2:
@@ -183,6 +198,7 @@ class CssRule(Rule):
 
     def get_text(self) -> str:
         return self.text
+
     def compile(self, var: dict):
         soup = BeautifulSoup(var["result"], "html.parser")
         rt: element.ResultSet = soup.select(self.text)
@@ -360,20 +376,22 @@ class AndRule(Rule):
             rt += i.compile(var)
         return rt
 
+
 class OrRule(Rule):
-    def __init__(self,*rules:Rule):
+    def __init__(self, *rules: Rule):
         self.rules = rules
+
     def get_text(self):
         return '||'.join([i.get_text() for i in self.rules])
+
     def compile(self, var: dict):
-        logger=logging.getLogger("OrRule")
+        logger = logging.getLogger("OrRule")
         for rule in self.rules:
             try:
                 logger.debug(f"Trying rule: {rule}")
-                if rt:=rule.compile(var):
+                if rt := rule.compile(var):
                     return rt
             except Exception as e:
                 logger.debug(e)
                 pass
         raise ValueError("No rule matched.")
-
