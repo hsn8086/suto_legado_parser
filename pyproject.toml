@@ -12,6 +12,7 @@ beautifulsoup4 = "^4.12.3"
 jsonpath-ng = "^1.6.1"
 pydantic = "^2.8.2"
 stpyv8 = "^12.8.374.26"
+lxml = "^5.3.0"
 
 
 [build-system]

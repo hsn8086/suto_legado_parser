@@ -23,6 +23,7 @@
 
 @Date       : 2024/9/5 下午7:12
 """
+import copy
 import json
 import re
 from abc import ABCMeta, abstractmethod
@@ -32,6 +33,7 @@ from typing import Iterable, Any
 import STPyV8
 import jsonpath_ng
 from bs4 import BeautifulSoup, element
+from lxml import etree
 
 from ..utils.js import JsUtil
 
@@ -43,6 +45,10 @@ class Rule(metaclass=ABCMeta):
 
     @abstractmethod
     def compile(self, var: dict):
+        ...
+
+    @abstractmethod
+    def get_text(self) -> str:
         ...
 
     def __repr__(self):
@@ -108,6 +114,9 @@ class JSoupRule(Rule):
     def __init__(self, text: str):
         self.text = text
 
+    def get_text(self):
+        return self.text
+
     def compile(self, var: dict):
         tl = self.text.split("@")
         tl = list(filter(lambda x: x, tl))
@@ -165,48 +174,77 @@ class CssRule:
     text: str
 
 
-@dataclass
-class InnerRule:
-    text: str
+class InnerRule(Rule):
+    def __init__(self, text: str):
+        self.text = text
+
+    def get_text(self):
+        return self.text
+
+    def compile(self, var: dict):
+        if self.text.startswith("$.") or self.text.startswith("$["):
+            return JsonPath(self.text).compile(copy.deepcopy(var))  # todo: Uncompleted
+        else:
+            return str(JsRule(self.text).compile(copy.deepcopy(var)))
 
 
-@dataclass
-class XPathRule:
-    text: str
+class XPathRule(Rule):
+    def __init__(self, text: str):
+        self.text = text
+
+    def get_text(self):
+        return self.text
+
+    def compile(self, var: dict):
+        html = etree.HTML(var["result"])
+        rt = html.xpath("//" + self.text)
+
+        rt_list = [str(i) for i in rt]
+
+        if len(rt_list) == 1:
+            rt = rt_list[0]
+        if len(rt_list) >= 2:
+            rt = json.dumps(rt_list, ensure_ascii=False)
+        return rt
 
 
 class JsRule(Rule):
     def __init__(self, text: str):
         self.text = text
 
+    def get_text(self):
+        return self.text
+
     def compile(self, var: dict):
-        jsu = JsUtil()
+        jsu = JsUtil(var)
         for k, v in var.items():
-            jsu.__setattr__(k, v)
+            setattr(jsu, k, v)
 
         with STPyV8.JSContext(jsu) as ctxt:
             for k in var:
                 ctxt.eval(f"let {k} = this.{k};")
+
             ctxt.eval(f"let java = this;")
-            try:
-                return ctxt.eval(self.text.strip())
-            except Exception as e:
-                # for i,line in enumerate(self.text.splitlines()):
-                #     print(f"{i}\t| {line}")
-                # raise e
-                pass
+            if True:
+                for i, line in enumerate(self.text.splitlines()):
+                    print(f"{i + 1}\t| {line}")
+                print(var)
+            return ctxt.eval(self.text.strip())
 
 
 class RegexRule(Rule):
     def __init__(self, *args):
         match len(args):
             case 1:
-                ...
+                raise NotImplementedError
             case 2:
                 self.pattern = args[0]
                 self.repl = args[1]
             case _:
                 raise ValueError("Invalid RegexRule")
+
+    def get_text(self):
+        return f"##{self.pattern}##{self.repl}"
 
     def compile(self, var: dict):
         return re.sub(self.pattern, self.repl, var["result"])
@@ -230,6 +268,9 @@ class JsonPath(Rule):
             case _:
                 raise ValueError("Invalid JsonPath")
 
+    def get_text(self):
+        return self.json_path + "".join([i.get_text() for i in self.rule])
+
     def compile(self, var: dict):
         if isinstance(var["result"], str):
             j = json.loads(var["result"])
@@ -239,7 +280,7 @@ class JsonPath(Rule):
         if len(rt_dict) == 0:
             return ""
         elif len(rt_dict) == 1:
-            rt = json.dumps(rt_dict[0], ensure_ascii=False)
+            rt = rt_dict[0]
         else:
             rt = json.dumps(rt_dict, ensure_ascii=False)
         for i in self.rule:
@@ -252,19 +293,34 @@ class StrRule(Rule):
     def __init__(self, text: str = ''):
         self.rules: list[str | Any] = [text] if text else []
 
+    def get_text(self):
+        rt = ""
+        for rule in self.rules:
+            if isinstance(rule, str):
+                rt += rule
+            else:
+                rt += rule.get_text()
+
     def compile(self, var: dict):
         rt = ""
         for i in self.rules:
             if isinstance(i, str):
                 rt += i
             elif isinstance(i, InnerRule):
-                if i.text.startswith("$.") or i.text.startswith("$["):
-                    jsonpath_parser = jsonpath_ng.parse(i.text)
-                    if isinstance(var["result"], str):
-                        j = json.loads(var["result"])
-                    else:
-                        j = var["result"]
-                    rt += jsonpath_parser.find(j)[0].value
-                else:
-                    rt += str(eval(i.text, var))
+                rt += i.compile(var)
+        return rt
+
+
+class AndRule(Rule):
+    def __init__(self, rules: list[Rule]):
+        self.rules = rules
+
+    def get_text(self):
+        return '&&'.join([i.get_text() for i in self.rules])
+
+    def compile(self, var: dict):
+        rt = ""
+        for i in self.rules:
+            print(i.compile(var))
+            rt += i.compile(var)
         return rt

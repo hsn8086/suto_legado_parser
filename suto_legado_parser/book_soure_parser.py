@@ -30,8 +30,8 @@ from urllib.parse import quote
 import httpx
 from pydantic import BaseModel
 
-from suto_legado_parser.utils.network import request
 from suto_legado_parser.rule.compile import rule_compile
+from suto_legado_parser.utils.network import request
 
 
 class BookInfo(BaseModel):
@@ -43,6 +43,38 @@ class BookInfo(BaseModel):
     intro: str = "Nothing"
     kind: str = "Unknown"
     last_chapter: str = "Unknown"
+
+
+class ProcessedUrl(BaseModel):
+    url: str
+    decode: str = 'utf-8'
+    method: str = 'get'
+    body: str = ''
+
+
+def url_process(url: str) -> ProcessedUrl:
+    # Process the options
+    # example:
+    #   https://example.com, {"encode": "utf-8", "method": "post", "body": "key={{key}}"}
+    options = {}
+    cut = url.find(",")  # Find the cut point
+    if cut != -1:
+        options_json: str = url[cut + 1:]  # Extract the options
+        url = url[:cut]  # Cut the options
+
+        # The function of next sentence is similar as json.loads(options_json)
+        options = eval(options_json)  # Parse the options
+        # Explanation:
+        # The json of the options should be like this:
+        #   {"encode": "utf-8", "method": "post", "body": "key={{key}}"}
+        # But sometimes it may not be a json and like the dict of the python:
+        #   {'encode': 'utf-8', 'method': 'post', 'body': 'key={{key}}'}
+        # So we use eval to parse it
+
+    decode = options.get("decode", 'utf-8')
+    method = options.get("method", 'get')
+    body = options.get("body", '')
+    return ProcessedUrl(url=url, decode=decode, method=method, body=body)
 
 
 class Parser:
@@ -58,6 +90,7 @@ class Parser:
         self.base_url: str = raw_burl
         self.search_url = self.j.get("searchUrl")
         self.rule_search = self.j.get("ruleSearch")
+        self.rule_book_info = self.j.get("ruleBookInfo")
         self.client = httpx.AsyncClient(base_url=self.base_url)
 
     async def search(self, title: str) -> Generator[BookInfo, None, None]:
@@ -65,29 +98,9 @@ class Parser:
         var = {"key": quote(title), "page": 1}  # Define the var #todo: page
         compiled_url: str = rule_compile(self.search_url, var)  # Compile the url
 
-        # Process the options
-        # example:
-        #   https://example.com, {"encode": "utf-8", "method": "post", "body": "key={{key}}"}
-        options = {}
-        cut = compiled_url.find(",")  # Find the cut point
-        if cut != -1:
-            options_json: str = compiled_url[cut + 1:]  # Extract the options
-            compiled_url = compiled_url[:cut]  # Cut the options
+        p_url = url_process(compiled_url)
 
-            # The function of next sentence is similar as json.loads(options_json)
-            options = eval(options_json)  # Parse the options
-            # Explanation:
-            # The json of the options should be like this:
-            #   {"encode": "utf-8", "method": "post", "body": "key={{key}}"}
-            # But sometimes it may not be a json and like the dict of the python:
-            #   {'encode': 'utf-8', 'method': 'post', 'body': 'key={{key}}'}
-            # So we use eval to parse it
-
-        decode = options.get("decode", 'utf-8')
-        method = options.get("method", 'get')
-        body = options.get("body", '')
-
-        search_result = await request(self.client, compiled_url, method, body, decode, allow_redirects=True)
+        search_result = await request(self.client, **(p_url.dict()), allow_redirects=True)
 
         # `rule_compile` will return a string of list in this case.
         books = json.loads(
@@ -96,7 +109,8 @@ class Parser:
         for book in books:
             author = rule_compile(self.rule_search.get("author"), {"result": book}, allow_str_rule=False)
             name = rule_compile(self.rule_search.get("name"), {"result": book}, allow_str_rule=False)
-            word_count = rule_compile(self.rule_search.get("wordCount"), {"result": book}, allow_str_rule=False,default="0")
+            word_count = rule_compile(self.rule_search.get("wordCount"), {"result": book}, allow_str_rule=False,
+                                      default="0")
             book_url = rule_compile(self.rule_search.get("bookUrl"), {"result": book})
             cover_url = rule_compile(self.rule_search.get("coverUrl"), {"result": book}, allow_str_rule=False)
             intro = rule_compile(self.rule_search.get("intro"), {"result": book}, allow_str_rule=False)
@@ -111,3 +125,22 @@ class Parser:
                            intro=intro,
                            kind=kind,
                            last_chapter=last_chapter)
+
+    async def get_detail(self, book_url: str):
+        p_url = url_process(book_url)
+        raw_content = await request(self.client, **(p_url.dict()), allow_redirects=True)
+        init = rule_compile(self.rule_book_info.get("init"), {"result": raw_content}, allow_str_rule=False,
+                            default=raw_content)
+
+        name = rule_compile(self.rule_book_info.get("name"), {"result": init})
+        author = rule_compile(self.rule_book_info.get("author"), {"result": init})
+        cover_url = rule_compile(self.rule_book_info.get("coverUrl"), {"result": init})
+        intro = rule_compile(self.rule_book_info.get("intro"), {"result": init})
+        kind = rule_compile(self.rule_book_info.get("kind"), {"result": init})
+        last_chapter = rule_compile(self.rule_book_info.get("lastChapter"), {"result": init})
+        toc_url = rule_compile(self.rule_book_info.get("tocUrl"), {"result": init})
+        word_count = rule_compile(self.rule_book_info.get("wordCount"), {"result": init})
+        print(author, cover_url, intro, kind, last_chapter, name, toc_url, word_count)
+
+    async def get_book(self, book_url: str):
+        print((await self.client.get(book_url)).content)

@@ -31,6 +31,8 @@ from httpx import Client
 
 
 class JsUtil(STPyV8.JSClass):
+    def __init__(self, var: dict):
+        self.var = var
 
     @staticmethod
     def ajax(urlStr: str):
@@ -48,8 +50,12 @@ class JsUtil(STPyV8.JSClass):
         return base64.b64decode(_str).decode()
 
     @staticmethod
-    def timeFormat(_time: str | int):
-        if isinstance(_time, int):
+    def timeFormat(_time: str | int | float):
+        if isinstance(_time, int | float):
             return datetime.fromtimestamp(_time / 1000).strftime('%Y-%m-%d %H:%M:%S')
         elif isinstance(_time, str):
             return datetime.strptime(_time, '%Y-%m-%d %H:%M:%S').timestamp()
+
+    def getString(self, ruleStr: str, isUrl: bool = False) -> str:
+        assert not isUrl  # todo:Unimplemented
+        return self.var['result'][ruleStr]

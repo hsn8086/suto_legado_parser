@@ -23,11 +23,12 @@
 
 @Date       : 2024/9/4 下午5:14
 """
+import logging
 from typing import Iterable, Generator, Any, Callable
 
 from pydantic import BaseModel
 
-from .rules import Rule, JSoupRule, CssRule, InnerRule, XPathRule, JsRule, RegexRule, JsonPath, StrRule
+from .rules import Rule, JSoupRule, CssRule, InnerRule, XPathRule, JsRule, RegexRule, JsonPath, StrRule, AndRule
 
 
 class Locker:
@@ -169,8 +170,15 @@ def _split_rule_raw(rule: str) -> Generator[str, Any, None]:
         rt_str += char
 
         for rt_str, obj in es.split(rt_str):
+            obj: Rule
             if obj:
-                yield obj
+                if isinstance(obj, Rule):
+                    if len(split_obj := obj.get_text().split("&&")) >= 2:
+                        yield AndRule([obj.__class__(s) for s in split_obj])
+                    else:
+                        yield obj
+                else:
+                    yield obj
                 continue
 
         if char in control_char and rule[i - 1] not in control_char and not es.locker.is_locked():
@@ -179,7 +187,14 @@ def _split_rule_raw(rule: str) -> Generator[str, Any, None]:
             rt_str = char
             continue
 
-    yield es.end(rt_str)
+    obj = es.end(rt_str)
+    if isinstance(obj, Rule):
+        if len(split_obj := obj.get_text().split("&&")) >= 2:
+            yield AndRule([obj.__class__(s) for s in split_obj])
+        else:
+            yield obj
+    else:
+        yield obj
 
 
 def is_alpha(text: str):
