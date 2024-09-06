@@ -28,7 +28,7 @@ from typing import Iterable, Generator, Any, Callable
 
 from pydantic import BaseModel
 
-from .rules import Rule, JSoupRule, CssRule, InnerRule, XPathRule, JsRule, RegexRule, JsonPath, StrRule, AndRule
+from .rules import Rule, JSoupRule, CssRule, InnerRule, XPathRule, JsRule, RegexRule, JsonPath, StrRule, AndRule, OrRule
 
 
 class Locker:
@@ -146,7 +146,18 @@ class EncompassingSplitter:
         else:
             return text
 
-
+def logic_rule(rule: Rule) -> Rule:
+    """
+    Parse the logic rule.
+    :param rule: The rule.
+    :return: The rule object.
+    """
+    if len(split_obj := rule.get_text().split("&&")) >= 2:
+        return AndRule(*[rule.__class__(s) for s in split_obj])
+    elif len(split_obj := rule.get_text().split("||")) >= 2:
+        return OrRule(*[rule.__class__(s) for s in split_obj])
+    else:
+        return rule
 def _split_rule_raw(rule: str) -> Generator[str, Any, None]:
     es = EncompassingSplitter(rule)
     es.add_strut(JsonPath, '$.', {'@get:', '@put:', '@js:', '@css:', '@xpath', '<js>', '<css>', '<xpath>'},
@@ -173,10 +184,7 @@ def _split_rule_raw(rule: str) -> Generator[str, Any, None]:
             obj: Rule
             if obj:
                 if isinstance(obj, Rule):
-                    if len(split_obj := obj.get_text().split("&&")) >= 2:
-                        yield AndRule([obj.__class__(s) for s in split_obj])
-                    else:
-                        yield obj
+                    yield logic_rule(obj)
                 else:
                     yield obj
                 continue
@@ -189,10 +197,7 @@ def _split_rule_raw(rule: str) -> Generator[str, Any, None]:
 
     obj = es.end(rt_str)
     if isinstance(obj, Rule):
-        if len(split_obj := obj.get_text().split("&&")) >= 2:
-            yield AndRule([obj.__class__(s) for s in split_obj])
-        else:
-            yield obj
+        yield logic_rule(obj)
     else:
         yield obj
 

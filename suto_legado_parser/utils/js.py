@@ -24,6 +24,7 @@
 @Date       : 2024/9/4 下午10:19
 """
 import base64
+import hashlib
 from datetime import datetime
 
 import STPyV8
@@ -48,6 +49,14 @@ class JsUtil(STPyV8.JSClass):
     @staticmethod
     def base64Decode(_str: str):
         return base64.b64decode(_str).decode()
+
+    @staticmethod
+    def base64Encode(_str: str):
+        return base64.b64encode(_str.encode()).decode()
+
+    @staticmethod
+    def md5Encode(_str: str):
+        return hashlib.md5(_str.encode()).hexdigest()
 
     @staticmethod
     def timeFormat(_time: str | int | float):

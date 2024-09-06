@@ -25,6 +25,7 @@
 """
 import copy
 import json
+import logging
 import re
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
@@ -117,12 +118,18 @@ class JSoupRule(Rule):
     def get_text(self):
         return self.text
 
-    def compile(self, var: dict):
-        tl = self.text.split("@")
-        tl = list(filter(lambda x: x, tl))
+    def compile(self, var: dict) -> str:
+        # Check RegEx
+        regex_rule = None
+        if self.text.find("##") != -1:
+            self.text, regex = self.text.split("##", 1)
+            regex_rule = RegexRule(regex)
+
+        spilt_rule = self.text.split("@")
+        spilt_rule = list(filter(lambda x: x, spilt_rule))
         soup = BeautifulSoup(var["result"], "html.parser")
         rt: BeautifulSoup = soup
-        for i in tl:
+        for i in spilt_rule:
             try:
                 _type, selector = i.split(".", 1)
             except ValueError:
@@ -165,13 +172,28 @@ class JSoupRule(Rule):
                 rt: str = json.dumps([str(i) for i in rt], ensure_ascii=False)
         elif isinstance(rt, element.Tag):
             rt: str = str(rt)
-
+        if regex_rule:
+            rt: str = regex_rule.compile({**var, "result": rt})
         return rt
 
 
-@dataclass
-class CssRule:
-    text: str
+class CssRule(Rule):
+    def __init__(self, text: str):
+        self.text = text
+
+    def get_text(self) -> str:
+        return self.text
+    def compile(self, var: dict):
+        soup = BeautifulSoup(var["result"], "html.parser")
+        rt: element.ResultSet = soup.select(self.text)
+        rt_list = [str(i) for i in rt]
+        if len(rt_list) == 0:
+            raise ValueError("No result found.")
+        if len(rt_list) == 1:
+            rt = str(rt_list[0])
+        if len(rt_list) >= 2:
+            rt = json.dumps(rt_list, ensure_ascii=False)
+        return rt
 
 
 class InnerRule(Rule):
@@ -196,15 +218,22 @@ class XPathRule(Rule):
         return self.text
 
     def compile(self, var: dict):
+        regex_rule = None
+        if self.text.find("##") != -1:
+            self.text, regex = self.text.split("##", 1)
+            regex_rule = RegexRule(regex)
         html = etree.HTML(var["result"])
         rt = html.xpath("//" + self.text)
 
         rt_list = [str(i) for i in rt]
-
+        if len(rt_list) == 0:
+            raise ValueError("No result found.")
         if len(rt_list) == 1:
-            rt = rt_list[0]
+            rt = str(rt_list[0])
         if len(rt_list) >= 2:
             rt = json.dumps(rt_list, ensure_ascii=False)
+        if regex_rule:
+            rt = regex_rule.compile({**var, "result": rt})
         return rt
 
 
@@ -226,9 +255,10 @@ class JsRule(Rule):
 
             ctxt.eval(f"let java = this;")
             if True:
+                logger = logging.getLogger("JsRule")
                 for i, line in enumerate(self.text.splitlines()):
-                    print(f"{i + 1}\t| {line}")
-                print(var)
+                    logger.debug(f"{i + 1}\t| {line}")
+                logger.debug(var)
             return ctxt.eval(self.text.strip())
 
 
@@ -236,7 +266,11 @@ class RegexRule(Rule):
     def __init__(self, *args):
         match len(args):
             case 1:
-                raise NotImplementedError
+                if args[0].find("##") != -1:
+                    self.pattern, self.repl = args[0].split("##", 1)
+                else:
+                    self.pattern = args[0]
+                    self.repl = ""
             case 2:
                 self.pattern = args[0]
                 self.repl = args[1]
@@ -267,6 +301,8 @@ class JsonPath(Rule):
                 self.rule = [RegexRule(tl[1], tl[2])]
             case _:
                 raise ValueError("Invalid JsonPath")
+        if not self.json_path.startswith("$."):
+            self.json_path = "$." + self.json_path
 
     def get_text(self):
         return self.json_path + "".join([i.get_text() for i in self.rule])
@@ -276,7 +312,7 @@ class JsonPath(Rule):
             j = json.loads(var["result"])
         else:
             j = var["result"]
-        rt_dict = [match.value for match in jsonpath_ng.parse(f"$.{self.json_path}").find(j)]
+        rt_dict = [match.value for match in jsonpath_ng.parse(self.json_path).find(j)]
         if len(rt_dict) == 0:
             return ""
         elif len(rt_dict) == 1:
@@ -312,7 +348,7 @@ class StrRule(Rule):
 
 
 class AndRule(Rule):
-    def __init__(self, rules: list[Rule]):
+    def __init__(self, *rules: Rule):
         self.rules = rules
 
     def get_text(self):
@@ -321,6 +357,23 @@ class AndRule(Rule):
     def compile(self, var: dict):
         rt = ""
         for i in self.rules:
-            print(i.compile(var))
             rt += i.compile(var)
         return rt
+
+class OrRule(Rule):
+    def __init__(self,*rules:Rule):
+        self.rules = rules
+    def get_text(self):
+        return '||'.join([i.get_text() for i in self.rules])
+    def compile(self, var: dict):
+        logger=logging.getLogger("OrRule")
+        for rule in self.rules:
+            try:
+                logger.debug(f"Trying rule: {rule}")
+                if rt:=rule.compile(var):
+                    return rt
+            except Exception as e:
+                logger.debug(e)
+                pass
+        raise ValueError("No rule matched.")
+
