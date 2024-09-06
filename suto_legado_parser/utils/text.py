@@ -41,7 +41,7 @@ def classify_string(input_string):
         return 'jsonpath'
 
     # Check if the string matches xpath pattern
-    elif xpath_pattern.match(input_string):
+    elif xpath_pattern.match(input_string.strip()):
         return 'xpath'
 
     # Otherwise, classify as a regular string
