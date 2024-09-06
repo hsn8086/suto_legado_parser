@@ -120,78 +120,200 @@ class JSoupRule(Rule):
     def compile(self, var: dict) -> str:
         # Check RegEx
         regex_rule = None
-        if self.text.find("##") != -1:
+        if "##" in self.text:
             self.text, regex = self.text.split("##", 1)
             regex_rule = RegexRule(regex)
 
-        spilt_rule = self.text.split("@")
-        spilt_rule = list(filter(lambda x: x, spilt_rule))
+        split_rule = list(filter(lambda x: x, self.text.split("@")))
         soup = BeautifulSoup(var["result"], "html.parser")
-        rt: BeautifulSoup = soup
-        for i in spilt_rule:
-            no = None
-            if i.startswith("[") and i.endswith("]"):
-                _type = "css"
-                selector = i
-            else:
-                try:
-                    _type, selector = i.split(".", 1)
-                except ValueError:
-                    _type = i
-                    selector = ""
-                selector: str
+        rt = soup
 
-                # If the selector is a tag with no.
-                temp_sel = selector.rsplit(".", 1)
-
-                if len(temp_sel) >= 2 and temp_sel[-1].isdigit():
-                    selector = ''.join(temp_sel[:-1])
-                    no = int(temp_sel[-1])  # Get the no of the tag.
-            match _type:
-                case "class":
-                    rt: element.ResultSet = rt.find_all(class_=selector)
-                case "id":
-                    rt: element.ResultSet = rt.find_all(id=selector)
-                case "tag":
-                    if isinstance(rt, list):
-                        rt_list = []
-                        for j in rt:
-                            rt_list.extend(j.select(selector.replace(".", ">")))
-                        rt: list = rt_list
-                    else:
-                        rt: element.ResultSet = rt.select(selector.replace(".", ">"))
-                case "text":
-                    rt: str = rt.get_text()
-                case "children":
-                    rt: Iterable = rt.children  # todo: Uncompleted
-                    raise NotImplementedError("The children selector is not implemented.")
-                case "css":
-                    rt: element.ResultSet = rt.select(selector.strip())
-                case _:
-                    rt = rt.get(_type)
-
-            if rt is None:
-                raise
-            if isinstance(rt, list):
-                if len(rt) == 1 and no is None:  # If there is only one tag in the ResultSet, return the tag.
-                    rt = rt[0]
-            if no is not None:
-                rt: element.Tag = rt[no]
-
-        rt: element.Tag | list | str | Iterable
+        for rule in split_rule:
+            rt = self._apply_rule(rt, rule)
 
         if isinstance(rt, list):
-            if len(rt) == 1:  # If there is only one tag in the ResultSet, return the tag.
-                rt = rt[0]
-            if len(rt) >= 2:
-                rt: str = json.dumps([str(i) for i in rt], ensure_ascii=False)
+            rt = self._process_result_list(rt)
         elif isinstance(rt, element.Tag):
-            rt: str = str(rt)
+            rt = str(rt)
+
         if regex_rule:
-            rt: str = regex_rule.compile({**var, "result": rt})
+            rt = regex_rule.compile({**var, "result": rt})
+
         return rt
 
+    def _apply_rule(self, rt, rule):
+        no = None
+        if rule.startswith("[") and rule.endswith("]"):
+            _type, selector = "css", rule
+        else:
+            _type, selector = self._parse_rule(rule)
+            selector, no = self._extract_no(selector)
 
+        match _type:
+            case "class":
+                rt = rt.find_all(class_=selector.strip().replace(" ", "."))
+            case "id":
+                rt = rt.find_all(id=selector)
+            case "tag":
+                rt = self._select_tag(rt, selector)
+            case "text":
+                rt = rt.get_text()
+            case "children":
+                raise NotImplementedError("The children selector is not implemented.")
+            case "css":
+                rt = rt.select(selector.strip())
+            case _:
+                rt = rt.get(_type)
+
+        if rt is None:
+            raise ValueError("No result found.")
+        if isinstance(rt, list) and len(rt) == 1 and no is None:
+            rt = rt[0]
+        if no is not None:
+            rt = rt[no]
+
+        return rt
+
+    def _parse_rule(self, rule):
+        parts = rule.split(".", 1)
+        if len(parts) == 2:
+            return parts[0], parts[1]
+        return parts[0], ""
+
+    def _extract_no(self, selector):
+        temp_sel = selector.rsplit(".", 1)
+        if len(temp_sel) >= 2 and temp_sel[-1].isdigit():
+            return ''.join(temp_sel[:-1]), int(temp_sel[-1])
+        return selector, None
+
+    def _select_tag(self, rt, selector):
+        if isinstance(rt, list):
+            rt_list = []
+            for j in rt:
+                rt_list.extend(j.select(selector.replace(".", ">")))
+            return rt_list
+        return rt.select(selector.replace(".", ">"))
+
+    def _process_result_list(self, rt):
+        if len(rt) == 1:
+            return rt[0]
+        if len(rt) >= 2:
+            return json.dumps([str(i) for i in rt], ensure_ascii=False)
+        return rt
+# class JSoupRule(Rule):
+#     def __init__(self, text: str):
+#         self.text = text
+#
+#     def get_text(self):
+#         return self.text
+#
+#     def compile(self, var: dict) -> str:
+#         # Check RegEx
+#         regex_rule = None
+#         if self.text.find("##") != -1:
+#             self.text, regex = self.text.split("##", 1)
+#             regex_rule = RegexRule(regex)
+#
+#         spilt_rule = self.text.split("@")
+#         spilt_rule = list(filter(lambda x: x, spilt_rule))
+#         soup = BeautifulSoup(var["result"], "html.parser")
+#         rt: BeautifulSoup = soup
+#         for i in spilt_rule:
+#             no = None
+#             if i.startswith("[") and i.endswith("]"):
+#                 _type = "css"
+#                 selector = i
+#             else:
+#                 try:
+#                     _type, selector = i.split(".", 1)
+#                 except ValueError:
+#                     _type = i
+#                     selector = ""
+#                 selector: str
+#
+#                 # If the selector is a tag with no.
+#                 temp_sel = selector.rsplit(".", 1)
+#
+#                 if len(temp_sel) >= 2 and temp_sel[-1].isdigit():
+#                     selector = ''.join(temp_sel[:-1])
+#                     no = int(temp_sel[-1])  # Get the no of the tag.
+#             match _type:
+#                 case "class":
+#                     rt: element.ResultSet = rt.find_all(class_=selector.strip().replace(" ","."))
+#                 case "id":
+#                     rt: element.ResultSet = rt.find_all(id=selector)
+#                 case "tag":
+#                     if isinstance(rt, list):
+#                         rt_list = []
+#                         for j in rt:
+#                             rt_list.extend(j.select(selector.replace(".", ">")))
+#                         rt: list = rt_list
+#                     else:
+#                         rt: element.ResultSet = rt.select(selector.replace(".", ">"))
+#                 case "text":
+#                     rt: str = rt.get_text()
+#                 case "children":
+#                     rt: Iterable = rt.children  # todo: Uncompleted
+#                     raise NotImplementedError("The children selector is not implemented.")
+#                 case "css":
+#                     rt: element.ResultSet = rt.select(selector.strip())
+#                 case _:
+#                     rt = rt.get(_type)
+#
+#             if rt is None:
+#                 raise
+#             if isinstance(rt, list):
+#                 if len(rt) == 1 and no is None:  # If there is only one tag in the ResultSet, return the tag.
+#                     rt = rt[0]
+#             if no is not None:
+#                 rt: element.Tag = rt[no]
+#
+#         rt: element.Tag | list | str | Iterable
+#
+#         if isinstance(rt, list):
+#             if len(rt) == 1:  # If there is only one tag in the ResultSet, return the tag.
+#                 rt = rt[0]
+#             if len(rt) >= 2:
+#                 rt: str = json.dumps([str(i) for i in rt], ensure_ascii=False)
+#         elif isinstance(rt, element.Tag):
+#             rt: str = str(rt)
+#         if regex_rule:
+#             rt: str = regex_rule.compile({**var, "result": rt})
+#         return rt
+# class JSoupRule(Rule):
+#     def __init__(self, text: str):
+#         self.text = text
+#
+#     def get_text(self):
+#         return self.text
+#
+#     def compile(self, var: dict) -> str:
+#         # Check RegEx
+#         regex_rule = None
+#         if self.text.find("##") != -1:
+#             self.text, regex = self.text.split("##", 1)
+#             regex_rule = RegexRule(regex)
+#
+#         spilt_rule = self.text.split("@")
+#         spilt_rule = list(filter(lambda x: x, spilt_rule))
+#
+#         soup = BeautifulSoup(var["result"], "html.parser")
+#         rt: BeautifulSoup = soup
+#         print(spilt_rule)
+#         for i in spilt_rule:
+#             print(i)
+#             rt=rt.select("."+i)
+#             print("rt",rt)
+#         if isinstance(rt, list):
+#             if len(rt) == 1:  # If there is only one tag in the ResultSet, return the tag.
+#                 rt = rt[0]
+#             if len(rt) >= 2:
+#                 rt: str = json.dumps([str(i) for i in rt], ensure_ascii=False)
+#         elif isinstance(rt, element.Tag):
+#             rt: str = str(rt)
+#         if regex_rule:
+#             rt: str = regex_rule.compile({**var, "result": rt})
+#         return rt
 class CssRule(Rule):
     def __init__(self, text: str):
         self.text = text
@@ -221,7 +343,7 @@ class InnerRule(Rule):
 
     def compile(self, var: dict):
         if self.text.startswith("$.") or self.text.startswith("$["):
-            return JsonPath(self.text).compile(copy.deepcopy(var))  # todo: Uncompleted
+            return str(JsonPath(self.text).compile(copy.deepcopy(var)))  # todo: Uncompleted
         else:
             return str(JsRule(self.text).compile(copy.deepcopy(var)))
 
