@@ -84,7 +84,7 @@ def url_process(url: str) -> ProcessedUrl:
     return ProcessedUrl(url=url, decode=decode, method=method, body=body, headers=headers)
 
 
-def word_count_process(word_count: str|int) -> int:
+def word_count_process(word_count: str | int) -> int:
     if isinstance(word_count, int):
         return word_count
     rep_dict = {"亿": "00000000", "万": "0000", "千": "000", "百": "00", "十": "0", "零": "0", "一": "1", "二": "2",
@@ -117,7 +117,9 @@ class Parser:
 
     async def search(self, title: str) -> Generator[BookInfo, None, None]:
         self.logger.info(f"Searching for {title}")
-        var = {"key": quote(title), "page": 1}  # Define the var #todo: page
+        var = {"_book_source": self.j,
+               "key": quote(title),
+               "page": 1}  # Define the var #todo: page
 
         compiled_url: str = rule_compile(self.search_url, var)  # Compile the url
         self.logger.debug(f"Compiled url: {compiled_url}")
@@ -127,10 +129,10 @@ class Parser:
 
         search_result = await request(self.client, **(p_url.dict()), allow_redirects=True)
         self.logger.debug(f"Search result: {search_result}")
-
         # `rule_compile` will return a string of list in this case.
         books = json.loads(
-            rule_compile(self.rule_search.get("bookList"), {"result": search_result.strip()}, allow_str_rule=False))
+            rule_compile(self.rule_search.get("bookList"), {"_book_source": self.j, "result": search_result.strip()},
+                         allow_str_rule=False))
         self.logger.debug(f"Books: {books}")
 
         for book in books:
@@ -146,7 +148,8 @@ class Parser:
                 kind = rule_compile(self.rule_search.get("kind"), {"result": book})
                 last_chapter = rule_compile(self.rule_search.get("lastChapter"), {"result": book})
                 self.logger.debug(
-                    f"Book: {name} {author} {word_count} {book_url} {cover_url} {intro} {kind} {last_chapter}")
+                    f"Book: name: {name}, author: {author}, word_count: {word_count}, book_url: {book_url}, "
+                    f"cover_url: {cover_url}, intro: {intro}, kind: {kind}, last_chapter: {last_chapter}")
                 yield BookInfo(name=name,
                                author=author,
                                word_count=word_count,
@@ -160,6 +163,7 @@ class Parser:
                 continue
 
     async def get_detail(self, book_url: str):
+        var = {"_book_source": self.j}
         self.logger.info(f"Getting detail of {book_url}")
 
         p_url = url_process(book_url)
@@ -168,18 +172,18 @@ class Parser:
         raw_content = await request(self.client, **(p_url.dict()), allow_redirects=True)
         self.logger.debug(f"Raw content: {raw_content}")
 
-        init = rule_compile(self.rule_book_info.get("init"), {"result": raw_content}, allow_str_rule=False,
+        init = rule_compile(self.rule_book_info.get("init"), {**var, "result": raw_content}, allow_str_rule=False,
                             default=raw_content)
         self.logger.debug(f"Init: {init}")
 
-        name = rule_compile(self.rule_book_info.get("name"), {"result": init})
-        author = rule_compile(self.rule_book_info.get("author"), {"result": init})
-        cover_url = rule_compile(self.rule_book_info.get("coverUrl"), {"result": init})
-        intro = rule_compile(self.rule_book_info.get("intro"), {"result": init})
-        kind = rule_compile(self.rule_book_info.get("kind"), {"result": init})
-        last_chapter = rule_compile(self.rule_book_info.get("lastChapter"), {"result": init})
-        toc_url = rule_compile(self.rule_book_info.get("tocUrl"), {"result": init})
-        word_count = rule_compile(self.rule_book_info.get("wordCount"), {"result": init}, default="0",
+        name = rule_compile(self.rule_book_info.get("name"), {**var, "result": init})
+        author = rule_compile(self.rule_book_info.get("author"), {**var, "result": init})
+        cover_url = rule_compile(self.rule_book_info.get("coverUrl"), {**var, "result": init})
+        intro = rule_compile(self.rule_book_info.get("intro"), {**var, "result": init})
+        kind = rule_compile(self.rule_book_info.get("kind"), {**var, "result": init})
+        last_chapter = rule_compile(self.rule_book_info.get("lastChapter"), {**var, "result": init})
+        toc_url = rule_compile(self.rule_book_info.get("tocUrl"), {**var, "result": init})
+        word_count = rule_compile(self.rule_book_info.get("wordCount"), {**var, "result": init}, default="0",
                                   callback=word_count_process)
         return BookDetail(name=name,
                           author=author,

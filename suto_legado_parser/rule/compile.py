@@ -23,6 +23,7 @@
 
 @Date       : 2024/9/4 下午6:21
 """
+import logging
 from typing import Callable
 
 from .parser import split_rule
@@ -43,7 +44,8 @@ def rule_compile(rules_str: str, var: dict, *, allow_str_rule=True, default=None
     """
     # Something on first:
     #   The widely known rule of legado is consist of several rules. So this "rule" should name as "rules".
-
+    logger=logging.getLogger("rule_compile")
+    logger.debug(f"compiling rule: {rules_str}")
     if rules_str is None:  # If the rules_str is None, then return the default value.
         return default
 

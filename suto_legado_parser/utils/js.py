@@ -31,10 +31,27 @@ import STPyV8
 from httpx import Client
 
 
-class JsUtil(STPyV8.JSClass):
+class Source(STPyV8.JSClass):
     def __init__(self, var: dict):
         self.var = var
 
+    def getKey(self):
+        print(self.var)
+        return self.var['_book_source']['bookSourceUrl']
+
+
+class JsUtil(STPyV8.JSClass):
+    def __init__(self, var: dict):
+        self.var = var
+        self.source = Source(var)
+
+    def put(self, key: str, value: str):
+        self.var[key] = value
+    def get(self, *args):
+        if len(args) == 1:
+            return self.var[args[0]]
+        elif len(args) == 2:
+            raise NotImplementedError
     @staticmethod
     def ajax(urlStr: str):
         client = Client()
