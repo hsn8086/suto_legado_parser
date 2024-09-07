@@ -174,7 +174,7 @@ class JSoupRule(Rule):
             case "css":
                 rt = rt.select(selector.strip())
             case _:
-                rt = rt.get(_type)
+                rt = rt.get(_type) or rt.select(_type)
 
         if rt is None:
             raise ValueError("No result found.")
@@ -412,9 +412,10 @@ class JsRule(Rule):
 
         with STPyV8.JSContext(jsu) as ctxt:
             for k in var:
-                ctxt.eval(f"let {k} = this.{k};")
-
-            ctxt.eval(f"let java = this;")
+                if not k.startswith("_"):
+                    ctxt.eval(f"let {k} = this.{k};")
+            ctxt.eval("let source = this.source;")
+            ctxt.eval("let java = this;")
             if True:
                 logger = logging.getLogger("JsRule")
                 for i, line in enumerate(self.text.splitlines()):
