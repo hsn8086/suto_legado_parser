@@ -36,7 +36,7 @@ class Source(STPyV8.JSClass):
         self.var = var
 
     def getKey(self):
-        print(self.var)
+        #print(self.var)
         return self.var['_book_source']['bookSourceUrl']
 
 
