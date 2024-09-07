@@ -46,7 +46,7 @@ def rule_compile(rules_str: str, var: dict, *, allow_str_rule=True, default=None
     #   The widely known rule of legado is consist of several rules. So this "rule" should name as "rules".
     logger=logging.getLogger("rule_compile")
     logger.debug(f"compiling rule: {rules_str}")
-    if rules_str is None:  # If the rules_str is None, then return the default value.
+    if not rules_str:  # If the rules_str is None, then return the default value.
         return default
 
     rules = split_rule(rules_str)
@@ -64,4 +64,5 @@ def rule_compile(rules_str: str, var: dict, *, allow_str_rule=True, default=None
             var["result"] = rule.compile(var)  # Compile the rule in the normal way.
     if callback is not None:
         return callback(var["result"])
+    logger.debug(f"compiled rule: {var['result']}")
     return var["result"]  # Return the result.
