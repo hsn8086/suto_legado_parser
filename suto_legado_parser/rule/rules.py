@@ -158,6 +158,7 @@ class JSoupRule(Rule):
             _type, selector = "css", rule
         else:
             _type, selector = self._parse_rule(rule)
+            _type=_type or "class"
             selector, no = self._extract_no(selector)
 
         match _type:
