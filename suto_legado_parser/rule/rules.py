@@ -28,7 +28,7 @@ import json
 import logging
 import re
 from abc import ABCMeta, abstractmethod
-from typing import Iterable, Any
+from typing import Any, Generator
 
 import STPyV8
 import jsonpath_ng
@@ -110,39 +110,50 @@ class Rule(metaclass=ABCMeta):
 #             rt: str = str(rt)
 #
 #         return rt
+def flatten(list_: list):
+    for el in list_:
+        if isinstance(el, list):
+            yield from flatten(el)
+        else:
+            yield el
+
+
 class JSoupRule(Rule):
     def __init__(self, text: str):
-        self.text = text
+        self.text: str = text
 
     def get_text(self):
         return self.text
 
     def compile(self, var: dict) -> str:
         # Check RegEx
-        regex_rule = None
+        regex_rule: RegexRule | None = None
         if "##" in self.text:
             self.text, regex = self.text.split("##", 1)
             regex_rule = RegexRule(regex)
 
-        split_rule = list(filter(lambda x: x, self.text.split("@")))
-        soup = BeautifulSoup(var["result"], "html.parser")
-        rt = soup
+        soup: BeautifulSoup = BeautifulSoup(var["result"], "html.parser")
+        results: list[BeautifulSoup | element.Tag | str] = [soup]
 
+        split_rule: Generator[str, None, None] = filter(lambda x: x, self.text.split("@"))
         for rule in split_rule:
-            rt = self._apply_rule(rt, rule)
+            results = list(self._apply_rule_multi(results, rule))
 
-        if isinstance(rt, list):
-            rt = self._process_result_list(rt)
-        elif isinstance(rt, element.Tag):
-            rt = str(rt)
+        assert isinstance(results, list)
+        result = self._process_result_list(results)
 
-        if regex_rule:
-            rt = regex_rule.compile({**var, "result": rt})
+        if regex_rule is not None:
+            result = regex_rule.compile({**var, "result": result})
 
-        return rt
+        return result
 
-    def _apply_rule(self, rt, rule):
-        no = None
+    def _apply_rule_multi(self, rt: list[BeautifulSoup | element.Tag], rule: str) -> Generator:
+        for i in rt:
+            yield from self._apply_rule(i, rule)
+
+    def _apply_rule(self, rt: BeautifulSoup | element.Tag, rule: str) -> list[BeautifulSoup | element.Tag | str]:
+        assert isinstance(rt, (BeautifulSoup, element.Tag))
+        no: int | None = None
         if rule.startswith("[") and rule.endswith("]"):
             _type, selector = "css", rule
         else:
@@ -167,39 +178,51 @@ class JSoupRule(Rule):
 
         if rt is None:
             raise ValueError("No result found.")
-        if isinstance(rt, list) and len(rt) == 1 and no is None:
-            rt = rt[0]
+        # if isinstance(rt, list) and len(rt) == 1 and no is None:
+        #     rt = rt[0]
+
         if no is not None:
             rt = rt[no]
 
-        return rt
+        return self._2list(rt)
 
-    def _parse_rule(self, rule):
+    @staticmethod
+    def _2list(rt) -> list:
+        if isinstance(rt, list):
+            return rt
+        return [rt]
+
+    @staticmethod
+    def _parse_rule(rule: str) -> tuple[str, str]:
         parts = rule.split(".", 1)
         if len(parts) == 2:
             return parts[0], parts[1]
         return parts[0], ""
 
-    def _extract_no(self, selector):
+    @staticmethod
+    def _extract_no(selector: str) -> tuple[str, int | None]:
         temp_sel = selector.rsplit(".", 1)
         if len(temp_sel) >= 2 and temp_sel[-1].isdigit():
             return ''.join(temp_sel[:-1]), int(temp_sel[-1])
         return selector, None
 
-    def _select_tag(self, rt, selector):
-        if isinstance(rt, list):
-            rt_list = []
-            for j in rt:
-                rt_list.extend(j.select(selector.replace(".", ">")))
-            return rt_list
-        return rt.select(selector.replace(".", ">"))
+    @staticmethod
+    def _select_tag(rt: element.Tag | BeautifulSoup, selector: str) -> list:
+        for i in flatten([rt]):
+            return i.select(selector.replace(".", ">"))
 
-    def _process_result_list(self, rt):
-        if len(rt) == 1:
-            return rt[0]
-        if len(rt) >= 2:
-            return json.dumps([str(i) for i in rt], ensure_ascii=False)
-        return rt
+    @staticmethod
+    def _process_result_list(rt: list) -> str:
+        assert len(rt) > 0
+        match len(rt):
+            case 1:
+                if isinstance(rt[0], element.Tag):
+                    return str(rt[0])
+                return rt[0]
+            case _:
+                return json.dumps([str(i) for i in rt], ensure_ascii=False)
+
+
 # class JSoupRule(Rule):
 #     def __init__(self, text: str):
 #         self.text = text
