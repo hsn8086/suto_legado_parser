@@ -161,10 +161,10 @@ class Parser:
                                      default="No description")
 
                 self.logger.debug(f"Getting kind.")
-                kind = rule_compile(self.rule_search.get("kind"), {"result": book})
+                kind = rule_compile(self.rule_search.get("kind"), {"result": book},default="Unclassified")
 
                 self.logger.debug(f"Getting last chapter.")
-                last_chapter = rule_compile(self.rule_search.get("lastChapter"), {"result": book})
+                last_chapter = rule_compile(self.rule_search.get("lastChapter"), {"result": book},default="Unknown")
 
                 self.logger.debug(
                     f"Book: name: {name}, author: {author}, word_count: {word_count}, book_url: {book_url}, "
