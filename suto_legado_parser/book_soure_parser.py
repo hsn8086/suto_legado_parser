@@ -210,6 +210,7 @@ class Parser:
                   "intro": intro, "kind": kind, "last_chapter": last_chapter, "toc_url": toc_url}
         detail = {k: v for k, v in detail.items() if v}
         info = book_info.copy(update=detail)
+        self.logger.debug(f"Detail: {info}")
         return BookDetail(**info.dict())
 
     async def get_book(self, book_url: str):
