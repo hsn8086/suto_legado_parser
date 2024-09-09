@@ -151,6 +151,19 @@ class JSoupRule(Rule):
         for i in rt:
             yield from self._apply_rule(i, rule)
 
+    def _get_tag_from_text(self, rt: BeautifulSoup | element.Tag, text: str) -> element.Tag | None:
+        for i in rt.find_all():
+            i: element.Tag
+            for child in i.childGenerator():
+                if isinstance(child, element.Tag):
+                    if res := self._get_tag_from_text(child, text):
+                        return res
+
+            if i.get_text() == text:
+                return i
+        else:
+            return None
+
     def _apply_rule(self, rt: BeautifulSoup | element.Tag, rule: str) -> list[BeautifulSoup | element.Tag | str]:
         assert isinstance(rt, (BeautifulSoup, element.Tag))
         no: int | None = None
@@ -158,18 +171,23 @@ class JSoupRule(Rule):
             _type, selector = "css", rule
         else:
             _type, selector = self._parse_rule(rule)
-            _type=_type or "class"
+            _type = _type or "class"
             selector, no = self._extract_no(selector)
 
         match _type:
             case "class":
-                rt = rt.find_all(class_=selector.strip().replace(" ", "."))
+                rt = rt.select(f".{selector.strip()}")
             case "id":
-                rt = rt.find_all(id=selector)
+                rt = rt.select(f"[id={selector}]")
             case "tag":
                 rt = self._select_tag(rt, selector)
-            case "text":
-                rt = rt.get_text()
+            case "text" | "textNodes":
+                if selector:
+                    rt = self._get_tag_from_text(rt, selector)
+                    if rt is None:
+                        raise ValueError("No result found.")
+                else:
+                    rt = rt.get_text()
             case "children":
                 raise NotImplementedError("The children selector is not implemented.")
             case "css":
@@ -198,6 +216,8 @@ class JSoupRule(Rule):
         parts = rule.split(".", 1)
         if len(parts) == 2:
             return parts[0], parts[1]
+        elif len(parts) == 1 and ">" in parts[0]:
+            return "tag", parts[0]
         return parts[0], ""
 
     @staticmethod
@@ -210,7 +230,7 @@ class JSoupRule(Rule):
     @staticmethod
     def _select_tag(rt: element.Tag | BeautifulSoup, selector: str) -> list:
         for i in flatten([rt]):
-            return i.select(selector.replace(".", ">"))
+            return i.select(selector.replace(".", " "))
 
     @staticmethod
     def _process_result_list(rt: list) -> str:
