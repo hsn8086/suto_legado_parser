@@ -47,6 +47,8 @@ def rule_compile(rules_str: str, var: dict, *, allow_str_rule=True, default=None
     logger=logging.getLogger("rule_compile")
     logger.debug(f"compiling rule: {rules_str}")
     if not rules_str:  # If the rules_str is None, then return the default value.
+        if callback is not None:
+            return callback(default)
         return default
 
     rules = split_rule(rules_str)
@@ -62,7 +64,7 @@ def rule_compile(rules_str: str, var: dict, *, allow_str_rule=True, default=None
                     var["result"] = JSoupRule(rule.compile(var)).compile(var)
         else:
             var["result"] = rule.compile(var)  # Compile the rule in the normal way.
+    logger.debug(f"compiled rule: {var['result']}")
     if callback is not None:
         return callback(var["result"])
-    logger.debug(f"compiled rule: {var['result']}")
     return var["result"]  # Return the result.
