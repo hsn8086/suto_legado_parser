@@ -82,7 +82,7 @@ def url_process(url: str) -> ProcessedUrl:
     body = options.get("body", '')
     headers = options.get("headers", {})
 
-    return ProcessedUrl(url=url, decode=decode, method=method, body=body, headers=headers)
+    return ProcessedUrl(url=url.strip(), decode=decode, method=method, body=body, headers=headers)
 
 
 def word_count_process(word_count: str | int) -> int:
@@ -113,10 +113,14 @@ class Parser:
         self.search_url = self.j.get("searchUrl")
         self.rule_search = self.j.get("ruleSearch")
         self.rule_book_info = self.j.get("ruleBookInfo")
-        self.client = httpx.AsyncClient(base_url=self.base_url)
+
+        self.headers = self.j.get("header", "{}") or "{}"
+
+        self.headers = self.headers if isinstance(self.headers, dict) else json.loads(self.headers)
+        self.client = httpx.Client(base_url=self.base_url,headers=self.headers)
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    async def search(self, title: str) -> Generator[BookInfo, None, None]:
+    def search(self, title: str) -> Generator[BookInfo, None, None]:
         self.logger.info(f"Searching for {title}")
         var = {"_book_source": self.j,
                "key": quote(title),
@@ -128,7 +132,7 @@ class Parser:
         p_url = url_process(compiled_url)
         self.logger.debug(f"Processed url: {p_url}")
 
-        search_result = await request(self.client, **(p_url.dict()), allow_redirects=True)
+        search_result = request(self.client, **(p_url.dict()), allow_redirects=True)
         self.logger.debug(f"Search result: {search_result}")
         # `rule_compile` will return a string of list in this case.
         books = json.loads(
@@ -181,7 +185,7 @@ class Parser:
                 self.logger.exception(e)
                 continue
 
-    async def get_detail(self, book_info: BookInfo) -> BookDetail:
+    def get_detail(self, book_info: BookInfo) -> BookDetail:
         book_url = book_info.book_url
         var = {"_book_source": self.j}
         self.logger.info(f"Getting detail of {book_url}")
@@ -189,7 +193,7 @@ class Parser:
         p_url = url_process(book_url)
         self.logger.debug(f"Processed url: {p_url}")
 
-        raw_content = await request(self.client, **(p_url.dict()), allow_redirects=True)
+        raw_content = request(self.client, **(p_url.dict()), allow_redirects=True)
         self.logger.debug(f"Raw content: {raw_content}")
 
         init = rule_compile(self.rule_book_info.get("init"), {**var, "result": raw_content}, allow_str_rule=False,
@@ -213,5 +217,5 @@ class Parser:
         self.logger.debug(f"Detail: {info}")
         return BookDetail(**info.dict())
 
-    async def get_book(self, book_url: str):
-        self.logger.debug((await self.client.get(book_url)).content)
+    def get_book(self, book_url: str):
+        self.logger.debug((self.client.get(book_url)).content)

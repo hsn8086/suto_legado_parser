@@ -44,7 +44,7 @@ def rule_compile(rules_str: str, var: dict, *, allow_str_rule=True, default=None
     """
     # Something on first:
     #   The widely known rule of legado is consist of several rules. So this "rule" should name as "rules".
-    logger=logging.getLogger("rule_compile")
+    logger = logging.getLogger("rule_compile")
     logger.debug(f"compiling rule: {rules_str}")
     if not rules_str:  # If the rules_str is None, then return the default value.
         if callback is not None:

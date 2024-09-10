@@ -27,19 +27,19 @@ import httpx
 
 
 # Add redirects support
-async def request(client: httpx.AsyncClient, url: str, method: str, body: str, decode: str,
-                  headers: dict | None = None, *,
-                  allow_redirects: bool = False) -> str:
+def request(client: httpx.Client, url: str, method: str, body: str, decode: str,
+            headers: dict | None = None, *,
+            allow_redirects: bool = False) -> str:
     if headers is None:
         headers = {}
 
-    resp = await client.request(method, url, content=body, headers=headers)
+    resp = client.request(method, url, content=body, headers=headers)
     match resp.status_code:
         case 200:
             return resp.content.decode(decode)
         case 301 | 302 | 303 | 307 | 308:
             if allow_redirects:
-                return await request(client, resp.headers['location'], method, body, decode, allow_redirects=True)
+                return request(client, resp.headers['location'], method, body, decode, allow_redirects=True)
             else:
                 return resp.content.decode(decode)
         case _:
